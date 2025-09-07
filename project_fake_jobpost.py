@@ -10,56 +10,77 @@ Original file is located at
 from google.colab import files
 uploaded = files.upload()
 
-# Install and import libraries
+# Import libraries
 import pandas as pd
 import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 
-# Download NLTK resources (only need to run once in Colab)
+# Download NLTK resources
 nltk.download("punkt")
+nltk.download("punkt_tab")   # ✅ Fix LookupError
 nltk.download("wordnet")
 nltk.download("stopwords")
 
-# Load dataset (make sure the CSV is uploaded in Colab)
+# Load dataset
 df = pd.read_csv("fake_job_postings.csv", encoding="latin-1")
 
 # Function to preprocess text
 def preprocess_text(text):
-    if pd.isna(text):  # If cell is empty, return empty string
+    if pd.isna(text):
         return ""
-
-    # Lowercase
     text = text.lower()
-
-    # Tokenize
     tokens = word_tokenize(text)
-
-    # Keep only alphabetic words
     tokens = [w for w in tokens if w.isalpha()]
-
-    # Remove stopwords
     stop_words = set(stopwords.words("english"))
     tokens = [word for word in tokens if word not in stop_words]
-
-    # Lemmatization
     lemmatizer = WordNetLemmatizer()
     lems = [lemmatizer.lemmatize(word) for word in tokens]
-
-    # Return as a single string
     return " ".join(lems)
 
-# Identify all text (object) columns in the dataset
-text_columns = df.select_dtypes(include="object").columns
+print("\n🔄 Preprocessing data...")
+df["description_clean"] = df["description"].apply(preprocess_text)
+df = df.dropna(subset=["fraudulent"])  # Drop rows with missing target
+print("✅ Preprocessing complete!")
 
-# Apply preprocessing to each text column and create new "_clean" columns
-for col in text_columns:
-    df[col + "_clean"] = df[col].apply(preprocess_text)
+# Show first 5 preprocessed rows
+print("\n📊 First 5 Preprocessed Rows:")
+print(df[["title", "description", "description_clean"]].head(5))
 
-# Show first few rows with cleaned text
-print(df.head()[[col for col in df.columns if "_clean" in col]])
+# Features (X) and Target (y)
+X = df["description_clean"]
+y = df["fraudulent"]
 
-# Save final dataset with cleaned text
-df.to_csv("preprocessed_fake_job_postings.csv", index=False, encoding="utf-8")
-print("✅ Preprocessing complete! File saved as preprocessed_fake_job_postings.csv")
+# Convert text into TF-IDF features
+vectorizer = TfidfVectorizer(max_features=5000)
+X_tfidf = vectorizer.fit_transform(X)
+
+# Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X_tfidf, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print("\n🔄 Training model...")
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+print("✅ Training complete!")
+
+print("\n🔄 Testing model...")
+y_pred = model.predict(X_test)
+print("✅ Testing complete!")
+
+# Show first 5 actual vs predicted results
+results = pd.DataFrame({
+    "Job Title": df.loc[y_test.index, "title"].values[:5],
+    "Actual": y_test.values[:5],
+    "Predicted": y_pred[:5]
+})
+
+print("\n📊 First 5 Test Results:")
+print(results.to_string(index=False))
+
+print("\n✅ All steps complete! (Preprocessing + Training + Testing)")
